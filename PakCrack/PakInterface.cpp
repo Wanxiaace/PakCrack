@@ -74,6 +74,7 @@ void sgf::PakInterface::PopcapPak::Open(const std::filesystem::path& path)
 			break;
 
 		mFiles.push_back(std::make_shared<PakFile>());
+
 		std::shared_ptr<PakFile>& file = mFiles.back();
 
 
@@ -100,12 +101,16 @@ void sgf::PakInterface::PopcapPak::Open(const std::filesystem::path& path)
 
 	for (auto& x : mFiles)
 	{
-		x->mFilePtr = (unsigned char*)&mPakDecodeFileData[fileOffset];
+		x->mFilePtr = &mPakDecodeFileData[fileOffset];
 		fileOffset += x->mFileSize;
 	}
 }
 
-void sgf::PakInterface::PopcapPak::DumpFile(const std::filesystem::path& path, const std::filesystem::path& outPath)
+#ifdef _WIN32
+#include <Windows.h>
+#endif
+
+void sgf::PakInterface::PopcapPak::DumpFile(const std::filesystem::path& path, const std::filesystem::path& outPath, bool usingTimeStamp)
 {
 	auto & f = GetPakFile(path);
 
@@ -125,13 +130,25 @@ void sgf::PakInterface::PopcapPak::DumpFile(const std::filesystem::path& path, c
 
 	ofs.write((char*)f->mFilePtr, f->mFileSize);
 	ofs.close();
+
+	if (usingTimeStamp) {
+#ifdef _WIN32
+		HANDLE hFile = CreateFile(outPath.native().c_str(), GENERIC_WRITE, 0, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+
+		if (hFile == INVALID_HANDLE_VALUE || !SetFileTime(hFile, (FILETIME*)&f->mTimeStamp, (FILETIME*)&f->mTimeStamp, (FILETIME*)&f->mTimeStamp)) {
+			std::cerr << "Failed to set file time. Error: " << GetLastError() << std::endl;
+		}
+
+		CloseHandle(hFile);
+#endif
+	}
 }
 
-void sgf::PakInterface::PopcapPak::DumpAllFiles(const std::filesystem::path& outPath)
+void sgf::PakInterface::PopcapPak::DumpAllFiles(const std::filesystem::path& outPath,bool usingTimeStamp)
 {
 	for (auto& x : mFiles)
 	{
-		DumpFile(x->mFilePath, outPath / x->mFilePath);
+		DumpFile(x->mFilePath, outPath / x->mFilePath, usingTimeStamp);
 	}
 }
 
@@ -141,9 +158,87 @@ void sgf::PakInterface::PopcapPak::CopyFileBytes(char* dst, const std::filesyste
 	CopyLong(dst, (char*)f->mFilePtr, f->mFileSize);
 }
 
-void sgf::PakInterface::PopcapPak::GenPakFile()
+void sgf::PakInterface::PopcapPak::GenPakFile(const std::filesystem::path& outPath)
 {
+	std::ofstream ofs;
+	ofs.open("buf.pak", std::ios::binary);
+	if(!ofs.is_open())
+		throw PakError(PakError::ErrorType::PAK_GEN_FAILED);
+	int magicEncode = mMagic;
+	ofs.write((char*) & magicEncode, 4);
+	ofs.write((char*) & mVersion, 4);
 
+	for (size_t i = 0; i < mFiles.size(); i++)
+	{
+		auto pathStr = mFiles[i]->mFilePath.generic_string();
+		std::replace(pathStr.begin(), pathStr.end(), '/', '\\');
+
+		ofs.put(0);
+		ofs.put(pathStr.size());
+		ofs.write(pathStr.c_str(), pathStr.size());
+		ofs.write((char*) & mFiles[i]->mFileSize, 4);
+		ofs.write((char*) & mFiles[i]->mTimeStamp, 8);
+	}
+	ofs.put(0x80);
+
+	for (auto& x : mFiles)
+	{
+		ofs.write((char*)x->mFilePtr, x->mFileSize);
+	}
+
+	ofs.close();
+
+	std::ifstream ifs;
+	ifs.open("buf.pak", std::ios::binary);
+	if (!ifs.is_open())
+		throw PakError(PakError::ErrorType::PAK_GEN_FAILED);
+	ifs.seekg(0,std::ios::end);
+	int size = ifs.tellg();
+	ifs.seekg(0,std::ios::beg);
+
+	char* data = new char[size];
+	ifs.read(data,size);
+	ifs.close();
+
+	for (int i = 0; i < size; i++)
+	{
+		data[i] ^= 0xF7;
+	}
+
+	ofs.open(outPath, std::ios::binary);
+	if (!ofs.is_open())
+		throw PakError(PakError::ErrorType::PAK_GEN_FAILED);
+	ofs.write(data, size);
+
+	ofs.close();
+	delete[] data;
+}
+
+void sgf::PakInterface::PopcapPak::AddFile(const std::filesystem::path& path, const char* data, int size, unsigned long long timeStamp)
+{
+	mFiles.push_back(std::make_shared<PakFile>());
+	auto& f = mFiles.back();
+	f->mFilePath = path;
+	f->mFilePtr = data;
+	f->mFileSize = size;
+	f->mTimeStamp = timeStamp;
+	mFileMaps[path] = f;
+}
+
+void sgf::PakInterface::PopcapPak::RemoveFile(const std::filesystem::path& path)
+{
+	if (mFileMaps.erase(path)) {
+		for (auto x = mFiles.begin(); x < mFiles.end(); x++)
+		{
+			if ((*x)->mFilePath == path)
+			{
+				mFiles.erase(x);//erase会导致迭代器的无效，但是直接break没问题
+				break;
+			}
+		}
+	}
+	else
+		throw PakError(PakError::ErrorType::PAK_INVALID_FILE);
 }
 
 const std::shared_ptr<sgf::PakInterface::PakFile>& sgf::PakInterface::PopcapPak::GetPakFile(std::filesystem::path path)

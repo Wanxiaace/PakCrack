@@ -18,6 +18,7 @@ namespace sgf {
 				PAK_UNSUPPORT_VERSION,
 				PAK_MAGIC_ERROR,
 				PAK_INVALID_FILE,
+				PAK_GEN_FAILED,
 			};
 		public:
 			ErrorType mErrorType;
@@ -37,6 +38,7 @@ namespace sgf {
 			{PakError::ErrorType::PAK_UNSUPPORT_VERSION,"PAK_UNSUPPORT_VERSION"},
 			{PakError::ErrorType::PAK_MAGIC_ERROR,"PAK_MAGIC_ERROR"},
 			{PakError::ErrorType::PAK_INVALID_FILE,"PAK_INVALID_FILE"},
+			{PakError::ErrorType::PAK_GEN_FAILED,"PAK_GEN_FAILED"},
 		};
 
 		class PopcapPak;
@@ -49,7 +51,7 @@ namespace sgf {
 		private:
 			friend class PopcapPak;
 
-			unsigned char* mFilePtr;//从pak数据中选取的数据头部，不能delete
+			const char* mFilePtr;//从pak数据中选取的数据头部，不能delete
 		};
 
 		class PopcapPak {
@@ -73,12 +75,21 @@ namespace sgf {
 			void DumpDecodePak() const;
 			void Open(const std::filesystem::path& path);
 
-			void DumpFile(const std::filesystem::path& path, const std::filesystem::path& outPath = "");
-			void DumpAllFiles(const std::filesystem::path& outPath = "");
+			/// <summary>
+			/// DumpFilesInPAK
+			/// </summary>
+			/// <param name="path"></param>
+			/// <param name="outPath"></param>
+			/// <param name="usingTimeStamp">will change the time of new file, it will be "false" for faster</param>
+			void DumpFile(const std::filesystem::path& path, const std::filesystem::path& outPath = "",bool usingTimeStamp = false);
+			void DumpAllFiles(const std::filesystem::path& outPath = "", bool usingTimeStamp = false);
 
 			void CopyFileBytes(char* dst, const std::filesystem::path&);
 
-			void GenPakFile();
+			void GenPakFile(const std::filesystem::path& outPath);
+
+			void AddFile(const std::filesystem::path& path,const char* data,int size,unsigned long long timeStamp = 0);
+			void RemoveFile(const std::filesystem::path& path);
 
 		private:
 			const std::shared_ptr<sgf::PakInterface::PakFile>& GetPakFile(std::filesystem::path path);
