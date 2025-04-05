@@ -66,15 +66,19 @@ namespace sgf {
 			unsigned int mVersion;
 
 		public:
-			PopcapPak(std::filesystem::path path);
+			PopcapPak();
+			PopcapPak(const std::filesystem::path& path);
 			~PopcapPak();
 
 			void DumpDecodePak() const;
+			void Open(const std::filesystem::path& path);
 
-			void DumpFile(std::filesystem::path path, std::filesystem::path outPath = "");
-			void DumpAllFiles(std::filesystem::path outPath = "");
+			void DumpFile(const std::filesystem::path& path, const std::filesystem::path& outPath = "");
+			void DumpAllFiles(const std::filesystem::path& outPath = "");
 
-			void CopyFileBytes(char* dst, std::filesystem::path path);
+			void CopyFileBytes(char* dst, const std::filesystem::path&);
+
+			void GenPakFile();
 
 		private:
 			const std::shared_ptr<sgf::PakInterface::PakFile>& GetPakFile(std::filesystem::path path);

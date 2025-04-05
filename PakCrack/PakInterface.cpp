@@ -6,7 +6,34 @@ static void CopyLong(void* buf,char* sorce,int length,int pos = 0) {
 	memcpy(buf, &sorce[pos], length);
 }
 
-sgf::PakInterface::PopcapPak::PopcapPak(std::filesystem::path path)
+sgf::PakInterface::PopcapPak::PopcapPak():
+	mMagic(PAK_MAGIC_CONSTANT),
+	mPakDecodeFileData(nullptr),
+	mSize(-1),
+	mVersion(0)
+{
+
+}
+
+sgf::PakInterface::PopcapPak::PopcapPak(const std::filesystem::path& path)
+{
+	Open(path);
+}
+
+sgf::PakInterface::PopcapPak::~PopcapPak()
+{
+	delete[] mPakDecodeFileData;
+}
+
+void sgf::PakInterface::PopcapPak::DumpDecodePak() const
+{
+	std::ofstream out;
+	out.open("dump.pak",std::ios::binary);
+	out.write(mPakDecodeFileData,mSize);
+	out.close();
+}
+
+void sgf::PakInterface::PopcapPak::Open(const std::filesystem::path& path)
 {
 	mPakFile.open(path, std::ios::binary);
 	if (!mPakFile.is_open()) {
@@ -14,7 +41,7 @@ sgf::PakInterface::PopcapPak::PopcapPak(std::filesystem::path path)
 	}
 	mPakFile.seekg(0, std::ios::end);
 	mSize = mPakFile.tellg();
-	if(mSize < 16)
+	if (mSize < 16)
 		throw PakError(PakError::ErrorType::PAK_ABNORMAL_SIZE);
 	mPakFile.seekg(0, std::ios::beg);
 
@@ -35,7 +62,7 @@ sgf::PakInterface::PopcapPak::PopcapPak(std::filesystem::path path)
 
 	mVersion = (unsigned int)mPakDecodeFileData[4];
 
-	if(mVersion > 0)
+	if (mVersion > 0)
 		throw PakError(PakError::ErrorType::PAK_UNSUPPORT_VERSION);
 
 	int curPos = 8;//游标
@@ -48,30 +75,23 @@ sgf::PakInterface::PopcapPak::PopcapPak(std::filesystem::path path)
 
 		mFiles.push_back(std::make_shared<PakFile>());
 		std::shared_ptr<PakFile>& file = mFiles.back();
-		
+
 
 		char nameWidth = mPakDecodeFileData[curPos];
 		curPos++;
 
 		char name[256] = { 0 };
-		CopyLong(name,mPakDecodeFileData,nameWidth,curPos);
+		CopyLong(name, mPakDecodeFileData, nameWidth, curPos);
 		file->mFilePath = name;
 		curPos += nameWidth;
 
 		mFileMaps[file->mFilePath] = file;
 
-		file->mFileSize = *(int*) & mPakDecodeFileData[curPos];
+		file->mFileSize = *(int*)&mPakDecodeFileData[curPos];
 
 		curPos += 4;
 
 		file->mTimeStamp = *(unsigned long long*) & mPakDecodeFileData[curPos];
-
-		/*FILETIME timeStamp = *(FILETIME*)&mPakDecodeFileData[curPos];
-		SYSTEMTIME sysTime;
-		FileTimeToSystemTime(&timeStamp, &sysTime);
-		//输出一些信息
-		printf("file: %s time: %d-%d-%d %d:%d \n",name, sysTime.wYear, sysTime.wMonth, sysTime.wDay, sysTime.wHour, sysTime.wMinute);
-		*/
 		curPos += 8;
 
 	}
@@ -80,25 +100,12 @@ sgf::PakInterface::PopcapPak::PopcapPak(std::filesystem::path path)
 
 	for (auto& x : mFiles)
 	{
-		x->mFilePtr = (unsigned char*) & mPakDecodeFileData[fileOffset];
+		x->mFilePtr = (unsigned char*)&mPakDecodeFileData[fileOffset];
 		fileOffset += x->mFileSize;
 	}
 }
 
-sgf::PakInterface::PopcapPak::~PopcapPak()
-{
-	delete[] mPakDecodeFileData;
-}
-
-void sgf::PakInterface::PopcapPak::DumpDecodePak() const
-{
-	std::ofstream out;
-	out.open("dump.pak",std::ios::binary);
-	out.write(mPakDecodeFileData,mSize);
-	out.close();
-}
-
-void sgf::PakInterface::PopcapPak::DumpFile(std::filesystem::path path, std::filesystem::path outPath)
+void sgf::PakInterface::PopcapPak::DumpFile(const std::filesystem::path& path, const std::filesystem::path& outPath)
 {
 	auto & f = GetPakFile(path);
 
@@ -118,10 +125,9 @@ void sgf::PakInterface::PopcapPak::DumpFile(std::filesystem::path path, std::fil
 
 	ofs.write((char*)f->mFilePtr, f->mFileSize);
 	ofs.close();
-
 }
 
-void sgf::PakInterface::PopcapPak::DumpAllFiles(std::filesystem::path outPath)
+void sgf::PakInterface::PopcapPak::DumpAllFiles(const std::filesystem::path& outPath)
 {
 	for (auto& x : mFiles)
 	{
@@ -129,10 +135,15 @@ void sgf::PakInterface::PopcapPak::DumpAllFiles(std::filesystem::path outPath)
 	}
 }
 
-void sgf::PakInterface::PopcapPak::CopyFileBytes(char* dst, std::filesystem::path path)
+void sgf::PakInterface::PopcapPak::CopyFileBytes(char* dst, const std::filesystem::path& path)
 {
 	auto & f = GetPakFile(path);
 	CopyLong(dst, (char*)f->mFilePtr, f->mFileSize);
+}
+
+void sgf::PakInterface::PopcapPak::GenPakFile()
+{
+
 }
 
 const std::shared_ptr<sgf::PakInterface::PakFile>& sgf::PakInterface::PopcapPak::GetPakFile(std::filesystem::path path)
